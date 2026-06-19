@@ -34,8 +34,7 @@ import {
 export default function App() {
   const [activeTab, setActiveTab ] = useState<'status' | 'pnr' | 'schedule' | 'between'>('status');
 
-  // Search Mode & Autocomplete Suggestion states
-  const [searchMode, setSearchMode] = useState<'fast' | 'ai'>('fast');
+  // Autocomplete Suggestion states
   const [showStatusSuggestions, setShowStatusSuggestions] = useState<boolean>(false);
   const [showScheduleSuggestions, setShowScheduleSuggestions] = useState<boolean>(false);
 
@@ -112,13 +111,12 @@ export default function App() {
   ];
 
   // Fetch Live Status with client micro-service cache checking
-  const handleFetchStatus = async (customNum?: string, forceMode?: 'fast' | 'ai') => {
+  const handleFetchStatus = async (customNum?: string) => {
     const num = customNum || trainNumber;
     if (!num) return;
-    const mode = forceMode || searchMode;
     
     // Check client localStorage cache for instant sub-millisecond retrieval
-    const cacheKey = `status_cache_${num}_${mode}`;
+    const cacheKey = `status_cache_${num}`;
     const cachedData = localStorage.getItem(cacheKey);
     if (cachedData) {
       try {
@@ -137,7 +135,7 @@ export default function App() {
     setStatusError(null);
     setStatusNotice(null);
     try {
-      const res = await fetch(`/api/train/status?trainNumber=${encodeURIComponent(num)}&mode=${mode}`);
+      const res = await fetch(`/api/train/status?trainNumber=${encodeURIComponent(num)}`);
       const data = await res.json();
       if (!res.ok) {
         setStatusError(data.error || "Failed to fetch status");
@@ -186,12 +184,11 @@ export default function App() {
   };
 
   // Fetch Schedule with client cache check
-  const handleFetchSchedule = async (customNum?: string, forceMode?: 'fast' | 'ai') => {
+  const handleFetchSchedule = async (customNum?: string) => {
     const s = customNum || scheduleNumber;
     if (!s) return;
-    const mode = forceMode || searchMode;
 
-    const cacheKey = `schedule_cache_${s}_${mode}`;
+    const cacheKey = `schedule_cache_${s}`;
     const cachedData = localStorage.getItem(cacheKey);
     if (cachedData) {
       try {
@@ -210,7 +207,7 @@ export default function App() {
     setScheduleError(null);
     setScheduleNotice(null);
     try {
-      const res = await fetch(`/api/train/schedule?trainNumber=${encodeURIComponent(s)}&mode=${mode}`);
+      const res = await fetch(`/api/train/schedule?trainNumber=${encodeURIComponent(s)}`);
       const data = await res.json();
       if (!res.ok) {
         setScheduleError(data.error || "Failed to load schedule");
@@ -413,29 +410,6 @@ export default function App() {
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
                   <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
                     <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Track Live Train Progress</h3>
-                    
-                    {/* Mode Toggle Switcher */}
-                    <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold gap-1 shrink-0 w-fit">
-                      <button 
-                        onClick={() => {
-                          setSearchMode('fast');
-                          // instantly reload currently loaded train in selected mode
-                          if (statusResult) handleFetchStatus(statusResult.trainNumber, 'fast');
-                        }}
-                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'fast' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                      >
-                        <span>⚡</span> Fast Radar (0ms)
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setSearchMode('ai');
-                          if (statusResult) handleFetchStatus(statusResult.trainNumber, 'ai');
-                        }}
-                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'ai' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                      >
-                        <span>🧠</span> Deep AI (Real-time)
-                      </button>
-                    </div>
                   </div>
 
                   <div className="flex flex-col md:flex-row gap-3 relative">
@@ -931,28 +905,6 @@ export default function App() {
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
                 <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
                   <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">View Official Route Timetables</h3>
-                  
-                  {/* Mode Toggle Switcher for Schedule */}
-                  <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold gap-1 shrink-0 w-fit">
-                    <button 
-                      onClick={() => {
-                        setSearchMode('fast');
-                        if (scheduleResult) handleFetchSchedule(scheduleResult.trainNumber, 'fast');
-                      }}
-                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'fast' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                      <span>⚡</span> Fast Radar (0ms)
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setSearchMode('ai');
-                        if (scheduleResult) handleFetchSchedule(scheduleResult.trainNumber, 'ai');
-                      }}
-                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'ai' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
-                    >
-                      <span>🧠</span> Deep AI (Real-time)
-                    </button>
-                  </div>
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-3 relative">

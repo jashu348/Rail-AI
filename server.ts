@@ -49,7 +49,6 @@ if (API_KEY && API_KEY !== "MY_GEMINI_API_KEY" && API_KEY.trim() !== "") {
 // 1. Live Train Status
 app.get("/api/train/status", async (req, res) => {
   const trainNumber = String(req.query.trainNumber).trim();
-  const mode = String(req.query.mode || "fast").trim();
   
   if (!trainNumber) {
     return res.status(400).json({ error: "Train number is required" });
@@ -61,10 +60,13 @@ app.get("/api/train/status", async (req, res) => {
     return res.json(exactPreset);
   }
 
-  // Fast mode: immediately serve high-fidelity deterministic simulation
-  if (mode === "fast" || !ai) {
-    const fastStatus = getDeterministicLiveStatus(trainNumber);
-    return res.json(fastStatus);
+  // If Gemini is not configured, send clear notice to avoid giving wrong simulated/synthetic data
+  if (!ai) {
+    return res.status(404).json({
+      error: "Train not found in exact preset database",
+      requiresApiKey: true,
+      message: "Please configure your GEMINI_API_KEY in Settings > Secrets to track any Indian Railways train live! For immediate live tracking, try our preloaded exact preset trains: 12952, 12002, 22436, or 12049."
+    });
   }
 
   try {
@@ -130,7 +132,6 @@ app.get("/api/train/status", async (req, res) => {
 // 2. Train Schedule
 app.get("/api/train/schedule", async (req, res) => {
   const trainNumber = String(req.query.trainNumber).trim();
-  const mode = String(req.query.mode || "fast").trim();
 
   if (!trainNumber) {
     return res.status(400).json({ error: "Train number or name is required" });
@@ -142,10 +143,13 @@ app.get("/api/train/schedule", async (req, res) => {
     return res.json(offlineSchedule);
   }
 
-  // Serve fast deterministic timetable schedule instantly
-  if (mode === "fast" || !ai) {
-    const fastSchedule = getDeterministicSchedule(trainNumber);
-    return res.json(fastSchedule);
+  // If Gemini is not configured, send high-quality notice
+  if (!ai) {
+    return res.status(404).json({
+      error: "Train schedule not found in exact preset database",
+      requiresApiKey: true,
+      message: "Please configure your GEMINI_API_KEY in Settings > Secrets to view any Indian Railways route timetable dynamically! For immediate scheduling, try demo trains: 12952, 12002, 22436, or 12049."
+    });
   }
 
   try {
