@@ -1,6 +1,5 @@
 {
   "name": "Rail AI",
   "description": "AI-Powered Indian Railways Assistant. Track live train run status, check PNR status, view schedules, and find trains between stations.",
-  "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
