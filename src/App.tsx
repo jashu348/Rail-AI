@@ -34,6 +34,28 @@ import {
 export default function App() {
   const [activeTab, setActiveTab ] = useState<'status' | 'pnr' | 'schedule' | 'between'>('status');
 
+  // Search Mode & Autocomplete Suggestion states
+  const [searchMode, setSearchMode] = useState<'fast' | 'ai'>('fast');
+  const [showStatusSuggestions, setShowStatusSuggestions] = useState<boolean>(false);
+  const [showScheduleSuggestions, setShowScheduleSuggestions] = useState<boolean>(false);
+
+  // Popular Indian Railways trains for rapid search autocompletion
+  const POPULAR_TRAINS = [
+    { number: '12952', name: 'Mumbai Central Rajdhani Express' },
+    { number: '12002', name: 'New Delhi Bhopal Shatabdi Express' },
+    { number: '22436', name: 'New Delhi Varanasi Vande Bharat' },
+    { number: '12049', name: 'Gatimaan Express (NDLS-AGRA)' },
+    { number: '12925', name: 'Paschim Express (Bandra-Amritsar)' },
+    { number: '12559', name: 'Shiv Ganga Express (NDLS-Banaras)' },
+    { number: '12626', name: 'Kerala Express (NDLS-Trivandrum)' },
+    { number: '12010', name: 'Ahmedabad Shatabdi Express' },
+    { number: '12301', name: 'Howrah Rajdhani Express' },
+    { number: '12860', name: 'Gitanjali Express (HWH-Mumbai)' },
+    { number: '12213', name: 'Duronto Express (YPR-Delhi)' },
+    { number: '22691', name: 'SBC Nizamuddin Rajdhani Exp' },
+    { number: '12723', name: 'Telangana Express (HYB-NDLS)' }
+  ];
+
   // Live Train Status state
   const [trainNumber, setTrainNumber] = useState<string>('12952');
   const [statusResult, setStatusResult] = useState<LiveTrainStatus | null>(null);
@@ -63,6 +85,15 @@ export default function App() {
   const [betweenError, setBetweenError] = useState<string | null>(null);
   const [betweenNotice, setBetweenNotice] = useState<string | null>(null);
 
+  // Filter lists based on inputs
+  const autocompleteStatusTrains = trainNumber 
+    ? POPULAR_TRAINS.filter(t => t.number.includes(trainNumber) || t.name.toLowerCase().includes(trainNumber.toLowerCase()))
+    : POPULAR_TRAINS;
+
+  const autocompleteScheduleTrains = scheduleNumber 
+    ? POPULAR_TRAINS.filter(t => t.number.includes(scheduleNumber) || t.name.toLowerCase().includes(scheduleNumber.toLowerCase()))
+    : POPULAR_TRAINS;
+
   // Demo presets for easy user exploration
   const PRESET_TRAINS = [
     { number: '12952', name: 'Mumbai Rajdhani Express (Premium)' },
@@ -80,15 +111,33 @@ export default function App() {
     { from: 'NDLS', to: 'BSBS', label: 'New Delhi ➔ Varanasi' }
   ];
 
-  // Fetch Live Status
-  const handleFetchStatus = async (customNum?: string) => {
+  // Fetch Live Status with client micro-service cache checking
+  const handleFetchStatus = async (customNum?: string, forceMode?: 'fast' | 'ai') => {
     const num = customNum || trainNumber;
     if (!num) return;
+    const mode = forceMode || searchMode;
+    
+    // Check client localStorage cache for instant sub-millisecond retrieval
+    const cacheKey = `status_cache_${num}_${mode}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        setStatusResult(parsed);
+        setStatusLoading(false);
+        setStatusError(null);
+        setStatusNotice(null);
+        return;
+      } catch (err) {
+        // Continue to fresh fetch in case of parse error
+      }
+    }
+
     setStatusLoading(true);
     setStatusError(null);
     setStatusNotice(null);
     try {
-      const res = await fetch(`/api/train/status?trainNumber=${encodeURIComponent(num)}`);
+      const res = await fetch(`/api/train/status?trainNumber=${encodeURIComponent(num)}&mode=${mode}`);
       const data = await res.json();
       if (!res.ok) {
         setStatusError(data.error || "Failed to fetch status");
@@ -98,6 +147,7 @@ export default function App() {
         setStatusResult(null);
       } else {
         setStatusResult(data);
+        localStorage.setItem(cacheKey, JSON.stringify(data));
       }
     } catch (e) {
       setStatusError("Could not connect to the backend server. Make sure it is running.");
@@ -135,15 +185,32 @@ export default function App() {
     }
   };
 
-  // Fetch Schedule
-  const handleFetchSchedule = async (customNum?: string) => {
+  // Fetch Schedule with client cache check
+  const handleFetchSchedule = async (customNum?: string, forceMode?: 'fast' | 'ai') => {
     const s = customNum || scheduleNumber;
     if (!s) return;
+    const mode = forceMode || searchMode;
+
+    const cacheKey = `schedule_cache_${s}_${mode}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    if (cachedData) {
+      try {
+        const parsed = JSON.parse(cachedData);
+        setScheduleResult(parsed);
+        setScheduleLoading(false);
+        setScheduleError(null);
+        setScheduleNotice(null);
+        return;
+      } catch (err) {
+        // skip
+      }
+    }
+
     setScheduleLoading(true);
     setScheduleError(null);
     setScheduleNotice(null);
     try {
-      const res = await fetch(`/api/train/schedule?trainNumber=${encodeURIComponent(s)}`);
+      const res = await fetch(`/api/train/schedule?trainNumber=${encodeURIComponent(s)}&mode=${mode}`);
       const data = await res.json();
       if (!res.ok) {
         setScheduleError(data.error || "Failed to load schedule");
@@ -153,6 +220,7 @@ export default function App() {
         setScheduleResult(null);
       } else {
         setScheduleResult(data);
+        localStorage.setItem(cacheKey, JSON.stringify(data));
       }
     } catch (e) {
       setScheduleError("Failed to fetch schedule from server.");
@@ -342,18 +410,78 @@ export default function App() {
               <div className="lg:col-span-2 space-y-6">
                 
                 {/* Search Bar Block */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4">Track Live Train Progress</h3>
-                  <div className="flex flex-col md:flex-row gap-3">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
+                  <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Track Live Train Progress</h3>
+                    
+                    {/* Mode Toggle Switcher */}
+                    <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold gap-1 shrink-0 w-fit">
+                      <button 
+                        onClick={() => {
+                          setSearchMode('fast');
+                          // instantly reload currently loaded train in selected mode
+                          if (statusResult) handleFetchStatus(statusResult.trainNumber, 'fast');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'fast' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                      >
+                        <span>⚡</span> Fast Radar (0ms)
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setSearchMode('ai');
+                          if (statusResult) handleFetchStatus(statusResult.trainNumber, 'ai');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'ai' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                      >
+                        <span>🧠</span> Deep AI (Real-time)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row gap-3 relative">
                     <div className="relative flex-1">
                       <Search className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-slate-400 pointer-events-none" />
                       <input 
                         type="text" 
                         value={trainNumber}
-                        onChange={(e) => setTrainNumber(e.target.value)}
-                        placeholder="Enter Train Number (e.g. 12952, 12002, 22436)"
+                        onChange={(e) => {
+                          setTrainNumber(e.target.value);
+                          setShowStatusSuggestions(true);
+                        }}
+                        onFocus={() => setShowStatusSuggestions(true)}
+                        onBlur={() => {
+                          // Allow clicks on dropdown before hiding
+                          setTimeout(() => setShowStatusSuggestions(false), 200);
+                        }}
+                        placeholder="Enter 5-digit Train Number or Name..."
                         className="w-full p-3 pl-11 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
                       />
+
+                      {/* Dropdown matched list */}
+                      {showStatusSuggestions && autocompleteStatusTrains.length > 0 && (
+                        <div className="absolute left-0 right-0 top-[110%] bg-white border border-slate-200 shadow-xl rounded-xl z-50 overflow-hidden max-h-60 overflow-y-auto">
+                          <p className="text-[10px] text-slate-400 font-bold px-4 py-2 uppercase bg-slate-50 border-b border-slate-100">Popular Trains Suggestions</p>
+                          {autocompleteStatusTrains.map((t) => (
+                            <button
+                              key={t.number}
+                              onMouseDown={() => {
+                                setTrainNumber(t.number);
+                                setShowStatusSuggestions(false);
+                                handleFetchStatus(t.number);
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-blue-50/60 border-b border-slate-50 last:border-b-0 text-xs text-slate-700 flex items-center justify-between transition-colors"
+                            >
+                              <div>
+                                <span className="font-extrabold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded text-[10px] mr-2.5">{t.number}</span>
+                                <span className="font-bold text-slate-800">{t.name}</span>
+                              </div>
+                              <span className="text-[10px] text-blue-600 font-bold flex items-center gap-1 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                Track 🚀
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <button 
                       onClick={() => handleFetchStatus()}
@@ -370,7 +498,7 @@ export default function App() {
 
                   {/* Suggest presets row */}
                   <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Instant Presets:</span>
+                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">⚡ Instant Demo Presets:</span>
                     {PRESET_TRAINS.map(t => (
                       <button
                         key={t.number}
@@ -380,7 +508,7 @@ export default function App() {
                         }}
                         className="text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 font-semibold px-2.5 py-1 rounded-lg border border-slate-200 transition-colors"
                       >
-                        {t.number} ({t.name.split(' ')[0]})
+                        📍 {t.number} ({t.name.split(' ')[0]})
                       </button>
                     ))}
                   </div>
@@ -800,18 +928,76 @@ export default function App() {
             <div className="max-w-5xl mx-auto space-y-6">
               
               {/* Search schedule */}
-              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4">View Official Route Timetables</h3>
-                <div className="flex flex-col md:flex-row gap-3">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 relative">
+                <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-4">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">View Official Route Timetables</h3>
+                  
+                  {/* Mode Toggle Switcher for Schedule */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-semibold gap-1 shrink-0 w-fit">
+                    <button 
+                      onClick={() => {
+                        setSearchMode('fast');
+                        if (scheduleResult) handleFetchSchedule(scheduleResult.trainNumber, 'fast');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'fast' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      <span>⚡</span> Fast Radar (0ms)
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setSearchMode('ai');
+                        if (scheduleResult) handleFetchSchedule(scheduleResult.trainNumber, 'ai');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${searchMode === 'ai' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+                    >
+                      <span>🧠</span> Deep AI (Real-time)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-3 relative">
                   <div className="relative flex-1">
                     <Search className="absolute left-3.5 top-3.5 h-4.5 w-4.5 text-slate-400 pointer-events-none" />
                     <input 
                       type="text" 
                       value={scheduleNumber}
-                      onChange={(e) => setScheduleNumber(e.target.value)}
+                      onChange={(e) => {
+                        setScheduleNumber(e.target.value);
+                        setShowScheduleSuggestions(true);
+                      }}
+                      onFocus={() => setShowScheduleSuggestions(true)}
+                      onBlur={() => {
+                        setTimeout(() => setShowScheduleSuggestions(false), 200);
+                      }}
                       placeholder="Enter Train Number (e.g. 12002, 12952, 22436)"
                       className="w-full p-3 pl-11 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                     />
+
+                    {/* Autocomplete dropdown for Schedule */}
+                    {showScheduleSuggestions && autocompleteScheduleTrains.length > 0 && (
+                      <div className="absolute left-0 right-0 top-[110%] bg-white border border-slate-200 shadow-xl rounded-xl z-50 overflow-hidden max-h-60 overflow-y-auto">
+                        <p className="text-[10px] text-slate-400 font-bold px-4 py-2 uppercase bg-slate-50 border-b border-slate-100">Popular Trains Schedules Suggestions</p>
+                        {autocompleteScheduleTrains.map((t) => (
+                          <button
+                            key={t.number}
+                            onMouseDown={() => {
+                              setScheduleNumber(t.number);
+                              setShowScheduleSuggestions(false);
+                              handleFetchSchedule(t.number);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-blue-50/60 border-b border-slate-50 last:border-b-0 text-xs text-slate-700 flex items-center justify-between transition-colors"
+                          >
+                            <div>
+                              <span className="font-extrabold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded text-[10px] mr-2.5">{t.number}</span>
+                              <span className="font-bold text-slate-800">{t.name}</span>
+                            </div>
+                            <span className="text-[10px] text-blue-600 font-bold flex items-center gap-1 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                              View Schedule ⏱️
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <button 
                     onClick={() => handleFetchSchedule()}

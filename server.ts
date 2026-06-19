@@ -12,7 +12,9 @@ import {
   getLocalLiveStatus, 
   getLocalSchedule, 
   searchLocalBetweenStations, 
-  getLocalPNR 
+  getLocalPNR,
+  getDeterministicLiveStatus,
+  getDeterministicSchedule
 } from "./server/localData";
 
 dotenv.config();
@@ -47,23 +49,22 @@ if (API_KEY && API_KEY !== "MY_GEMINI_API_KEY" && API_KEY.trim() !== "") {
 // 1. Live Train Status
 app.get("/api/train/status", async (req, res) => {
   const trainNumber = String(req.query.trainNumber).trim();
+  const mode = String(req.query.mode || "fast").trim();
+  
   if (!trainNumber) {
     return res.status(400).json({ error: "Train number is required" });
   }
 
-  // Check local offline database first
-  const offlineStatus = getLocalLiveStatus(trainNumber);
-  if (offlineStatus) {
-    return res.json(offlineStatus);
+  // Check local exact preset list first
+  const exactPreset = getLocalLiveStatus(trainNumber);
+  if (exactPreset) {
+    return res.json(exactPreset);
   }
 
-  // If local check failed and Gemini is not configured, send error/notice
-  if (!ai) {
-    return res.status(404).json({
-      error: "Train not found in offline demo database.",
-      requiresApiKey: true,
-      message: "To search other Indian Railway trains, please set up your GEMINI_API_KEY in Settings > Secrets. You can instantly try demo trains: 12002, 12952, or 22436."
-    });
+  // Fast mode: immediately serve high-fidelity deterministic simulation
+  if (mode === "fast" || !ai) {
+    const fastStatus = getDeterministicLiveStatus(trainNumber);
+    return res.json(fastStatus);
   }
 
   try {
@@ -129,6 +130,8 @@ app.get("/api/train/status", async (req, res) => {
 // 2. Train Schedule
 app.get("/api/train/schedule", async (req, res) => {
   const trainNumber = String(req.query.trainNumber).trim();
+  const mode = String(req.query.mode || "fast").trim();
+
   if (!trainNumber) {
     return res.status(400).json({ error: "Train number or name is required" });
   }
@@ -139,12 +142,10 @@ app.get("/api/train/schedule", async (req, res) => {
     return res.json(offlineSchedule);
   }
 
-  if (!ai) {
-    return res.status(404).json({
-      error: "Train schedule not found offline.",
-      requiresApiKey: true,
-      message: "Please add your GEMINI_API_KEY in secrets to fetch other schedules dynamically, or try demo trains: 12002, 12952, or 22436."
-    });
+  // Serve fast deterministic timetable schedule instantly
+  if (mode === "fast" || !ai) {
+    const fastSchedule = getDeterministicSchedule(trainNumber);
+    return res.json(fastSchedule);
   }
 
   try {
